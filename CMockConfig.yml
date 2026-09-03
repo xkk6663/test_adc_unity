@@ -5,26 +5,28 @@
 #
 # 修改本文件后，需重新运行 `ruby gen_mocks.rb` 才能生效。
 #
-# 配置项说明：
+# 关键配置项：
+#   :mock_path          生成的桩文件输出目录（设为 "." 输出到当前目录）
 #   :mock_prefix        生成的桩文件名/函数前缀（设为 "mock_" 后，
 #                       hal_adc.h → mock_hal_adc.c/h，初始化函数 mock_hal_adc_Init）
 #   :plugins            启用的插件列表：
 #                         :expect        —— 提供 _ExpectAndReturn()，预设调用顺序与返回值
 #                         :ignore        —— 提供 _IgnoreAndReturn()，忽略调用次数
-#                         :expect_any_args —— 提供 _ExpectAnyArgsAndReturn()
 #   :when_no_prototypes 当头文件中没有函数原型时的行为（:warn / :error / :ignore）
 #   :enforce_strict_ordering  是否强制校验函数调用顺序（true/false）
-#   :includes           生成的桩文件中额外包含的头文件
-#   :unity_path         Unity 框架头文件路径（供 CMock 生成桩时引用）
+#   :includes           生成的桩文件中额外包含的头文件（:unity 表示包含 unity.h）
 # ==============================================================================
 
 :cmock:
+  # 桩文件输出目录（设为当前目录，与预生成桩位置一致）
+  :mock_path: "."
+
   # 桩文件前缀：hal_adc.h → mock_hal_adc.c/h
   :mock_prefix: mock_
 
   # 启用的插件（决定生成哪些桩函数 API）
   :plugins:
-    - :expect           # ExpectAndReturn / ExpectAnyArgsAndReturn
+    - :expect           # ExpectAndReturn
     - :ignore           # IgnoreAndReturn / StopIgnore
 
   # 头文件无函数原型时的行为
@@ -33,12 +35,6 @@
   # 不强制严格调用顺序（按函数各自独立计数）
   :enforce_strict_ordering: false
 
-  # 生成桩文件时包含的头文件
+  # 生成桩文件时包含 unity.h（提供 TEST_ASSERT 等宏）
   :includes:
-    - :unity           # 包含 unity.h（提供 TEST_ASSERT 等宏）
-
-  # Unity 框架路径（CMock 生成桩时需要解析 Unity 的辅助宏）
-  :unity_path: unity/
-
-  # 生成的桩文件输出目录（留空则输出到当前目录）
-  :output_path: "."
+    - :unity
