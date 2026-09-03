@@ -22,19 +22,29 @@ CC      = gcc
 CFLAGS  = -Wall -Wextra -std=c99 -I. -Iunity -Icmock/src
 LDFLAGS =
 
+# 跨平台可执行文件后缀检测：
+#   Windows 下 gcc 生成的可执行文件需带 .exe 后缀；
+#   Linux / macOS 下不需要后缀。CI 运行在 Linux 上，
+#   若硬编码 .exe 会导致 ./unit_test 找不到文件。
+ifeq ($(OS),Windows_NT)
+    EXE_EXT = .exe
+else
+    EXE_EXT =
+endif
+
 # ==============================================================================
 # 目标1：PC 单元测试（链接 CMock 桩）
 # ==============================================================================
 TEST_SRCS = test_battery.c battery.c mock_hal_adc.c unity/unity.c cmock/src/cmock.c
 TEST_OBJS = $(TEST_SRCS:.c=.o)
-TEST_BIN  = unit_test.exe
+TEST_BIN  = unit_test$(EXE_EXT)
 
 # ==============================================================================
 # 目标2：固件模拟（链接真实 HAL 实现）
 # ==============================================================================
 FW_SRCS = firmware_main.c battery.c
 FW_OBJS = $(FW_SRCS:.c=.o)
-FW_BIN  = firmware_demo.exe
+FW_BIN  = firmware_demo$(EXE_EXT)
 
 # ==============================================================================
 # 默认目标：编译两个目标
