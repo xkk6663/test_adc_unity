@@ -1,0 +1,29 @@
+# 编译产物
+*.o
+*.obj
+*.exe
+*.out
+*.hex
+*.bin
+*.elf
+
+# CMake 构建目录
+build/
+cmake-build-*/
+
+# CTest
+Testing/
+
+# 编辑器/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
