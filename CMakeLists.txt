@@ -29,8 +29,8 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra)
 endif()
 
-# 头文件搜索路径：工程根目录 + Unity 框架目录
-include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/unity)
+# 头文件搜索路径：工程根目录 + Unity 框架目录 + CMock 运行时目录
+include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/unity ${CMAKE_SOURCE_DIR}/cmock/src)
 
 # ==============================================================================
 # 目标1：PC 单元测试
@@ -39,8 +39,9 @@ include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/unity)
 add_executable(unit_test
     test_battery.c       # 单元测试用例
     battery.c            # 被测模块（业务逻辑）
-    mock_hal_adc.c       # CMock 生成的 HAL 桩（预生成等效版本）
+    mock_hal_adc.c       # CMock 生成的 HAL 桩
     unity/unity.c        # Unity 测试框架
+    cmock/src/cmock.c    # CMock 运行时（桩函数依赖的内存管理等）
 )
 
 # ==============================================================================

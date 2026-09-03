@@ -35,6 +35,6 @@
   # 不强制严格调用顺序（按函数各自独立计数）
   :enforce_strict_ordering: false
 
-  # 生成桩文件时包含 unity.h（提供 TEST_ASSERT 等宏）
-  :includes:
-    - :unity
+  # 注意：CMock 会自动在生成的桩中包含 unity.h，
+  # 不需要在此处显式配置 :includes。若配置 :includes: [:unity]，
+  # CMock 会错误地生成 #include "unity"（缺少 .h 后缀）导致编译失败。

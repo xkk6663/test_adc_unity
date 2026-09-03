@@ -19,13 +19,13 @@
 
 # 编译器与编译选项
 CC      = gcc
-CFLAGS  = -Wall -Wextra -std=c99 -I. -Iunity
+CFLAGS  = -Wall -Wextra -std=c99 -I. -Iunity -Icmock/src
 LDFLAGS =
 
 # ==============================================================================
 # 目标1：PC 单元测试（链接 CMock 桩）
 # ==============================================================================
-TEST_SRCS = test_battery.c battery.c mock_hal_adc.c unity/unity.c
+TEST_SRCS = test_battery.c battery.c mock_hal_adc.c unity/unity.c cmock/src/cmock.c
 TEST_OBJS = $(TEST_SRCS:.c=.o)
 TEST_BIN  = unit_test.exe
 
