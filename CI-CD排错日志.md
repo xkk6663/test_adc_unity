@@ -23,6 +23,7 @@
 | 05 | 2026-09-03 | 运行单元测试 | Linux 上 Makefile 生成 `unit_test.exe` 但 CI 运行 `./unit_test` | ✅ 已修复 |
 | 06 | 2026-09-05 | Windows 工具版本打印 | PowerShell 不支持 Unix 语法（`&&`、`2>/dev/null`） | ✅ 已修复 |
 | 07 | 2026-09-05 | Windows CMake 构建 | `Visual Studio 17 2022` 生成器在 runner 上不可用 | ✅ 已修复 |
+| 08 | 2026-09-05 | 覆盖率报告生成 | lcov `--remove` 未使用的排除模式报错 + 弃用选项 | ✅ 已修复 |
 
 ---
 
@@ -377,6 +378,78 @@ CMake 的 "Visual Studio 17 2022" 生成器需要在系统中找到完整的 Vis
 ### 教训
 
 在 GitHub Actions 的 Windows runner 上构建 C/C++ 项目时，**优先使用 Ninja + MSVC**，而不是 Visual Studio 生成器。Visual Studio 生成器对 VS IDE 安装的检测在 runner 镜像更新时容易失效。Ninja 配合 `ilammy/msvc-dev-cmd` 是社区验证过的最稳定方案。
+
+---
+
+## 08. lcov 覆盖率报告生成失败（未使用的排除模式）
+
+**日期**：2026-09-05
+**CI Run**：commit 14b755c（Ninja 修复 + doc 文档后）
+**失败步骤**：Job "Test Coverage" → "Generate coverage report"
+
+### 报错信息
+
+```
+lcov: WARNING: RC option 'lcov_branch_coverage' is deprecated.
+        Consider using 'branch_coverage' instead.
+lcov: ERROR: 'exclude' pattern '/usr/*' is unused.
+        (use "lcov --ignore-errors unused ..." to bypass this error)
+...
+Summary coverage rate:
+  lines......: 100.0% (28 of 28 lines)
+  functions..: 100.0% (4 of 4 functions)
+  branches...: 100.0% (10 of 10 branches)
+Error: Process completed with exit code 25.
+```
+
+### 根因分析
+
+两个问题叠加导致退出码 25：
+
+**问题 1：弃用的 RC 选项**
+```yaml
+--rc lcov_branch_coverage=1
+```
+新版 lcov（2.0+）将 `lcov_branch_coverage` 重命名为 `branch_coverage`，旧名称会产生 WARNING（但不导致失败）。
+
+**问题 2（致命）：未使用的排除模式**
+```yaml
+lcov --remove coverage.info '/usr/*' 'framework/*' 'test/*' 'tools/*' ...
+```
+`lcov --remove` 会检查每个排除模式是否实际匹配到了文件。本工程的覆盖率数据中：
+- `framework/*` —— 匹配到（unity.c、cmock.c）
+- `test/*` —— 匹配到（测试文件和桩文件）
+- `tools/*` —— 未匹配（tools/ 下是 Ruby 脚本，不参与 C 编译）
+- `/usr/*` —— **未匹配**（本工程不依赖系统库，gcov 数据中没有 /usr/ 路径）
+
+lcov 2.0+ 默认将"未使用的排除模式"视为 ERROR，返回非零退出码（25），导致 CI 步骤失败。即使覆盖率数据本身是 100% 正确的。
+
+### 修复方案
+
+1. **更新弃用选项**：`--rc lcov_branch_coverage=1` → `--rc branch_coverage=1`
+2. **忽略未使用的排除模式**：在 `lcov --remove` 中添加 `--ignore-errors unused`
+
+```yaml
+lcov --remove coverage.info \
+     '/usr/*' 'framework/*' 'test/*' 'tools/*' \
+     --output-file coverage-filtered.info \
+     --rc branch_coverage=1 \
+     --ignore-errors unused
+```
+
+### 为什么不移除 `/usr/*`？
+
+虽然本工程当前不依赖系统库，但保留 `/usr/*` 排除是**防御性编程**：
+- 未来新增依赖系统头文件的代码时，不需要修改 CI 配置
+- `--ignore-errors unused` 让 lcov 在模式未匹配时仅警告而非失败
+- 这是 lcov 官方推荐的处理方式
+
+### 教训
+
+- lcov 2.0+ 比 1.x 更严格，未使用的排除模式默认报错
+- 使用 `--ignore-errors unused` 是处理排除模式的标准做法
+- RC 选项名随版本变化，升级 lcov 后需检查弃用警告
+- 覆盖率数据正确不代表命令退出码为 0，CI 中必须检查退出码
 
 ---
 

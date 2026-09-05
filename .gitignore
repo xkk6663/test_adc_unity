@@ -6,6 +6,9 @@
 *.hex
 *.bin
 *.elf
+# 无后缀可执行文件（Linux/macOS）
+unit_test
+firmware_demo
 
 # CMake 构建目录
 build/
@@ -33,4 +36,5 @@ Thumbs.db
 *.gcda
 *.gcov
 coverage.info
+coverage-filtered.info
 coverage-report/
