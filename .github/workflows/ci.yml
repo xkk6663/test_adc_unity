@@ -102,8 +102,12 @@ jobs:
 
       # ------------------------------------------------------------------
       # 3. 打印工具版本
+      #    指定 shell: bash，确保 Windows（PowerShell）也能识别
+      #    Unix 语法（&&、2>/dev/null、uname）。GitHub Actions 的
+      #    Windows runner 预装 Git Bash，可直接使用 bash。
       # ------------------------------------------------------------------
       - name: Show tool versions
+        shell: bash
         run: |
           echo "=== OS ===" && uname -a 2>/dev/null || ver
           echo "=== cmake ===" && cmake --version
