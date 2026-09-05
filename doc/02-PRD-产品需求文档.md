@@ -43,7 +43,7 @@
 
 | 编号 | 用户故事 | 验收标准 |
 |------|----------|----------|
-| US-04 | 作为测试工程师，我希望测试用例自动运行，这样我不需要手动烧录硬件 | `make test` 一键运行全部 19 个用例 |
+| US-04 | 作为测试工程师，我希望测试用例自动运行，这样我不需要手动烧录硬件 | `ctest --test-dir build` 一键运行全部 19 个用例 |
 | US-05 | 作为测试工程师，我希望看到测试覆盖率，这样我可以评估测试充分性 | CI 生成 lcov HTML 覆盖率报告并上传 |
 | US-06 | 作为测试工程师，我希望测试用例有文档记录，这样我可以追溯每个用例的设计依据 | doc/06-测试用例.md 记录每个用例的编号、方法、预期 |
 
@@ -105,18 +105,13 @@
 
 ### 4.4 构建系统
 
-#### FR-006：Makefile 构建
+#### FR-006：CMake 跨平台构建
 
-- 支持 `make all`（编译单元测试 + 固件）
-- 支持 `make test`（编译并运行单元测试）
-- 支持 `make clean`（清理产物）
-- 跨平台：Windows 生成 `.exe`，Linux/macOS 无后缀
-
-#### FR-007：CMake 构建
-
-- 支持 `cmake -S . -B build && cmake --build build`
-- 支持 `ctest` 运行单元测试
+- 支持 `cmake -S . -B build` 配置
+- 支持 `cmake --build build` 编译（单元测试 + 固件）
+- 支持 `ctest --test-dir build` 运行单元测试
 - 跨平台：Unix Makefiles / Ninja / Visual Studio
+- 支持 `ENABLE_COVERAGE` 选项开启覆盖率编译
 
 ### 4.5 CI/CD
 
@@ -131,8 +126,8 @@
 
 | 平台 | 编译器 | 构建方式 |
 |------|--------|----------|
-| Ubuntu | gcc | Makefile + CMake |
-| macOS | clang | Makefile + CMake |
+| Ubuntu | gcc | CMake |
+| macOS | clang | CMake |
 | Windows | MSVC (Ninja) | CMake |
 
 #### FR-010：测试覆盖率
@@ -177,8 +172,8 @@
 
 | 编号 | 验收项 | 验证方式 |
 |------|--------|----------|
-| AC-01 | 19 个单元测试全部通过 | `make test` 输出 `19 Tests 0 Failures` |
-| AC-02 | 编译零警告 | `make all` 无 warning 输出 |
+| AC-01 | 19 个单元测试全部通过 | `ctest --test-dir build` 输出 `19 Tests 0 Failures` |
+| AC-02 | 编译零警告 | `cmake --build build` 无 warning 输出 |
 | AC-03 | CI 三 Job 全部通过 | GitHub Actions 徽章 passing |
 | AC-04 | 覆盖率 ≥ 90% | lcov 报告 Lines ≥ 90% |
 | AC-05 | cppcheck 零 error | CI static-analysis Job 通过 |
@@ -196,5 +191,5 @@
 | FR-003 LED 状态 | TC-LED-001 ~ TC-LED-006 | app/led/led.c: led_set_by_voltage |
 | FR-004 获取状态 | TC-LED-007 ~ TC-LED-008 | app/led/led.c: led_get_state |
 | FR-005 固件主循环 | 固件运行验证 | platform/firmware/firmware_main.c |
-| FR-006/007 构建 | CI 构建验证 | Makefile / CMakeLists.txt |
+| FR-006 构建 | CI 构建验证 | CMakeLists.txt |
 | FR-008~010 CI/CD | CI 流水线验证 | .github/workflows/ci.yml |

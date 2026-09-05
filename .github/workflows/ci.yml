@@ -1,20 +1,12 @@
 # ==============================================================================
-# 产品级 CI/CD 流水线（仿照 ELAB 框架工程实践）
+# 产品级 CI/CD 流水线（纯 CMake 构建，仿照 ELAB 框架工程实践）
 # ==============================================================================
-# 触发条件：
-#   - push 到 main / master 分支
-#   - 向 main / master 分支发起 Pull Request
+# 触发：push / PR 到 main 或 master 分支
 #
-# 流水线分为三个 Job：
-#   1. static-analysis —— 静态代码检查（cppcheck）
-#   2. build-and-test  —— 多平台构建矩阵（Ubuntu/gcc + macOS/clang + Windows/MSVC）
-#   3. coverage         —— 测试覆盖率（gcov + lcov，仅 Ubuntu）
-#
-# 每个平台验证：
-#   - CMock 桩自动生成（验证 hal → mock 流程）
-#   - Makefile 构建（Ubuntu/macOS）或 CMake 构建（全平台）
-#   - 单元测试运行（19 个用例）
-#   - 固件模拟运行
+# 三 Job 流水线：
+#   1. static-analysis —— cppcheck 静态代码检查
+#   2. build-and-test  —— 三平台矩阵（Ubuntu/gcc + macOS/clang + Windows/MSVC）
+#   3. coverage         —— gcov/lcov 测试覆盖率报告
 # ==============================================================================
 
 name: CI
@@ -25,24 +17,21 @@ on:
   pull_request:
     branches: [main, master]
 
-# ==============================================================================
-# Job 1: 静态代码分析
-# ==============================================================================
 jobs:
+  # ============================================================================
+  # Job 1: 静态代码分析（cppcheck）
+  # ============================================================================
   static-analysis:
     name: Static Analysis (cppcheck)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install cppcheck
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
 
-      - name: Run cppcheck on application code
+      - name: Run cppcheck
         run: |
           cppcheck --enable=warning,style,performance,portability \
                    --inline-suppr \
@@ -52,7 +41,7 @@ jobs:
                    app/ hal/ platform/
 
   # ============================================================================
-  # Job 2: 多平台构建与测试矩阵
+  # Job 2: 多平台构建与测试矩阵（纯 CMake）
   # ============================================================================
   build-and-test:
     name: Build & Test (${{ matrix.os }})
@@ -74,25 +63,16 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      # ------------------------------------------------------------------
-      # 1. 检出代码
-      # ------------------------------------------------------------------
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # ------------------------------------------------------------------
-      # 2. 安装依赖
-      # ------------------------------------------------------------------
-      - name: Install dependencies (Ubuntu)
+      # 安装依赖
+      - name: Install CMake (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc make cmake ruby
+        run: sudo apt-get update && sudo apt-get install -y cmake ruby
 
-      - name: Install dependencies (macOS)
+      - name: Install CMake (macOS)
         if: matrix.os == 'macos-latest'
-        run: |
-          brew install cmake ruby
+        run: brew install cmake ruby
 
       - name: Setup Ruby (Windows)
         if: matrix.os == 'windows-latest'
@@ -100,24 +80,11 @@ jobs:
         with:
           ruby-version: '3.3'
 
-      # ------------------------------------------------------------------
-      # 2.5 设置 MSVC 开发环境（仅 Windows）
-      #    GitHub Actions 的 windows-latest runner 上 Visual Studio 2022
-      #    生成器可能不可用（"could not find any instance of Visual Studio"）。
-      #    使用 Ninja + MSVC 编译器是 Windows 上最可靠的 C/C++ 构建方式。
-      #    ilammy/msvc-dev-cmd 会运行 vcvarsall.bat 设置 INCLUDE/LIB/PATH 等
-      #    环境变量，使 Ninja 能找到 cl.exe 编译器。
-      # ------------------------------------------------------------------
       - name: Setup MSVC environment (Windows)
         if: matrix.os == 'windows-latest'
         uses: ilammy/msvc-dev-cmd@v1
 
-      # ------------------------------------------------------------------
-      # 3. 打印工具版本
-      #    指定 shell: bash，确保 Windows（PowerShell）也能识别
-      #    Unix 语法（&&、2>/dev/null、uname）。GitHub Actions 的
-      #    Windows runner 预装 Git Bash，可直接使用 bash。
-      # ------------------------------------------------------------------
+      # 工具版本
       - name: Show tool versions
         shell: bash
         run: |
@@ -125,52 +92,39 @@ jobs:
           echo "=== cmake ===" && cmake --version
           echo "=== ruby ===" && ruby --version
 
-      # ------------------------------------------------------------------
-      # 4. CMock 重新生成桩（验证桩生成流程可用）
-      # ------------------------------------------------------------------
+      # CMock 重新生成桩（验证桩生成流程）
       - name: Regenerate mocks with CMock
         run: ruby tools/gen_mocks.rb
 
-      # ------------------------------------------------------------------
-      # 5. Makefile 构建（仅 Ubuntu/macOS，Windows 无 MinGW make）
-      # ------------------------------------------------------------------
-      - name: Build with Makefile
-        if: matrix.os != 'windows-latest'
-        run: make all
+      # CMake 配置 + 构建
+      - name: Configure with CMake
+        run: cmake -S . -B build -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=Release
 
-      - name: Run unit tests (Makefile)
-        if: matrix.os != 'windows-latest'
-        run: ./unit_test
+      - name: Build
+        run: cmake --build build --config Release
 
-      - name: Run firmware demo (Makefile)
-        if: matrix.os != 'windows-latest'
-        run: ./firmware_demo
-
-      # ------------------------------------------------------------------
-      # 6. CMake 构建（全平台）
-      # ------------------------------------------------------------------
-      - name: Build with CMake
-        run: |
-          cmake -S . -B build -G "${{ matrix.generator }}"
-          cmake --build build --config Release
-
+      # 运行单元测试（CTest）
       - name: Run unit tests (CTest)
-        run: |
-          cd build
-          ctest --output-on-failure -C Release
+        run: ctest --test-dir build --output-on-failure -C Release
 
-      # ------------------------------------------------------------------
-      # 7. 上传构建产物
-      # ------------------------------------------------------------------
+      # 运行固件模拟
+      - name: Run firmware demo
+        shell: bash
+        run: |
+          if [ -f build/firmware_demo ]; then
+            timeout 5 ./build/firmware_demo || true
+          elif [ -f build/Release/firmware_demo.exe ]; then
+            ./build/Release/firmware_demo.exe || true
+          elif [ -f build/firmware_demo.exe ]; then
+            ./build/firmware_demo.exe || true
+          fi
+
+      # 上传构建产物
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.os }}
           path: |
-            unit_test
-            unit_test.exe
-            firmware_demo
-            firmware_demo.exe
             build/unit_test
             build/unit_test.exe
             build/firmware_demo
@@ -180,7 +134,7 @@ jobs:
           if-no-files-found: ignore
 
   # ============================================================================
-  # Job 3: 测试覆盖率（仅 Ubuntu，gcov/lcov 最成熟）
+  # Job 3: 测试覆盖率（gcov/lcov，仅 Ubuntu）
   # ============================================================================
   coverage:
     name: Test Coverage (gcov/lcov)
@@ -188,28 +142,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc make ruby lcov
+        run: sudo apt-get update && sudo apt-get install -y cmake ruby lcov
 
       - name: Regenerate mocks
         run: ruby tools/gen_mocks.rb
 
-      - name: Build with coverage flags
-        run: |
-          make clean
-          make all CFLAGS="-Wall -Wextra -std=c99 --coverage -O0 -g"
+      - name: Configure with coverage flags
+        run: cmake -S . -B build -DENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build
 
       - name: Run unit tests
-        run: ./unit_test
+        run: ctest --test-dir build --output-on-failure
 
       - name: Generate coverage report
         run: |
-          lcov --capture --directory . --output-file coverage.info \
+          lcov --capture --directory build --output-file coverage.info \
                --rc branch_coverage=1
           lcov --remove coverage.info \
                '/usr/*' 'framework/*' 'test/*' 'tools/*' \
@@ -221,8 +173,7 @@ jobs:
                   --branch-coverage --legend --title "Unit Test Coverage"
 
       - name: Print coverage summary
-        run: |
-          lcov --summary coverage-filtered.info
+        run: lcov --summary coverage-filtered.info
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

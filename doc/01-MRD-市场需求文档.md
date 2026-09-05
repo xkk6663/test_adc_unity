@@ -65,7 +65,7 @@
 | 代码分层 | 扁平结构 | 按模块分目录 | ELAB 风格六层分层 |
 | CI/CD | 无 | 需自行配置 | 开箱即用三 Job 流水线 |
 | 跨平台 | 差 | 较好 | 好（Windows/Linux/macOS） |
-| 学习成本 | 低 | 中（需学 Ceedling） | 中（纯 Makefile/CMake） |
+| 学习成本 | 低 | 中（需学 Ceedling） | 低（纯 CMake） |
 | 文档 | 无 | 英文为主 | 中文完整文档链 |
 | 硬件依赖 | 强 | 弱（HAL 抽象） | 弱（HAL 接口 + CMock 桩） |
 
@@ -112,7 +112,7 @@
 | F-003 | HAL 硬件抽象层（ADC + GPIO 接口） | P0 |
 | F-004 | Unity 单元测试框架集成 | P0 |
 | F-005 | CMock 自动桩生成 | P0 |
-| F-006 | Makefile + CMake 双构建 | P0 |
+| F-006 | CMake 跨平台构建 | P0 |
 | F-007 | GitHub Actions CI/CD 流水线 | P0 |
 | F-008 | 完整中文文档链（MRD→运维） | P1 |
 
@@ -154,7 +154,7 @@
 | CMock 版本升级导致 API 变化 | 桩生成失败 | vendor 固定版本，锁定 CMockConfig.yml |
 | GitHub Actions runner 镜像更新 | CI 构建失败 | 使用 Ninja+MSVC 稳定方案，排错日志记录 |
 | 用户 Ruby 环境缺失 | 无法重新生成桩 | 桩文件检入仓库，无 Ruby 可直接编译 |
-| 跨平台路径差异 | Windows 编译失败 | Makefile 动态检测 OS，CMake 统一路径 |
+| 跨平台路径差异 | Windows 编译失败 | CMake 统一路径，CI 三平台矩阵验证 |
 
 ---
 

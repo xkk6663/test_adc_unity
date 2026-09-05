@@ -26,7 +26,7 @@
 
 - **被测对象**：电池电压采集模块（`battery`）+ LED 指示灯模块（`led`）
 - **测试框架**：Unity（轻量级 C 断言库）+ CMock（自动桩生成器）
-- **构建系统**：Makefile + CMake 双构建
+- **构建系统**：纯 CMake 跨平台构建
 - **CI/CD**：GitHub Actions，多平台矩阵 + 静态分析 + 覆盖率
 - **架构设计**：仿照 ELAB 框架的分层思想，按职责分离代码
 
@@ -34,7 +34,7 @@
 
 | 特性 | 说明 |
 |------|------|
-| 双目标编译 | 同一份业务代码，PC 测试目标链接 CMock 桩，固件目标链接真实 HAL |
+| 纯 CMake 构建 | 跨平台统一构建系统，Windows/Linux/macOS 一致 |
 | 19 个测试用例 | 覆盖等价类、边界值、错误推测、接口交互、容错、状态切换 |
 | 跨平台 | Windows / Linux / macOS 均可编译运行 |
 | 零硬件依赖 | 所有硬件操作通过 HAL 接口抽象，PC 上用 CMock 桩替换 |
@@ -121,8 +121,7 @@ unity_cmock_demo/
 ├── .github/workflows/
 │   └── ci.yml                    # CI/CD 流水线配置
 │
-├── Makefile                      # Makefile 构建脚本
-├── CMakeLists.txt                # CMake 构建脚本
+├── CMakeLists.txt                # CMake 构建脚本（唯一构建系统）
 ├── .gitignore
 ├── README.md                     # 本文档
 ├── 测试方案.md                    # 单元测试方案
@@ -135,50 +134,31 @@ unity_cmock_demo/
 
 ### 3.1 环境要求
 
-| 工具 | 用途 | 是否必需 |
-|------|------|----------|
-| gcc / clang / MSVC | C 编译器 | ✅ 必需 |
-| make（或 mingw32-make） | Makefile 构建 | Makefile 方式必需 |
-| CMake（≥3.10） | CMake 构建 | CMake 方式必需 |
-| Ruby | 运行 `gen_mocks.rb` 重新生成桩 | ❌ 桩已检入，可直接编译 |
+| 工具 | 最低版本 | 用途 | 是否必需 |
+|------|----------|------|----------|
+| CMake | 3.10 | 构建系统 | ✅ 必需 |
+| gcc / clang / MSVC | C99 兼容 | C 编译器 | ✅ 必需 |
+| Ruby | 2.5 | 重新生成 CMock 桩 | ❌ 桩已检入，可直接编译 |
 
-### 3.2 方式一：Makefile
-
-```bash
-# 编译（单元测试 + 固件模拟）
-make all
-
-# 运行单元测试（19 个用例）
-make test
-# 或直接运行
-./unit_test        # Linux/macOS
-unit_test.exe      # Windows
-
-# 运行固件模拟
-make firmware
-```
-
-**Windows（MinGW）**：使用 `mingw32-make` 替代 `make`。
-
-### 3.3 方式二：CMake
+### 3.2 构建与测试
 
 ```bash
-# 配置并构建
+# 配置（Windows 上自动使用 Visual Studio 或 Ninja）
 cmake -S . -B build
+
+# 编译
 cmake --build build
 
-# 运行单元测试（CTest）
-cd build
-ctest --output-on-failure
+# 运行单元测试（19 个用例）
+ctest --test-dir build --output-on-failure
 
-# 直接运行测试可执行文件
-./unit_test        # Linux/macOS
-./Release/unit_test.exe  # Windows (Visual Studio)
+# 运行固件模拟
+./build/firmware_demo        # Linux/macOS
+build\Release\firmware_demo.exe  # Windows
 ```
 
-**Windows（Visual Studio）**：CMake 会自动检测 Visual Studio 生成器，使用 MSVC 编译。
-
-### 3.4 预期输出
+**Windows（Visual Studio）**：CMake 自动检测 VS 生成器，使用 MSVC 编译。
+**Windows（MinGW/Ninja）**：`cmake -S . -B build -G "Ninja"` 后构建。
 
 ```
 test/unit/test_support.c:114:test_adc_to_mv_normal:PASS
@@ -215,7 +195,7 @@ ELAB 框架的核心思想是**"一切外设统一为设备对象，业务代码
 
 ### 4.3 双目标编译
 
-同一份 `app/battery/battery.c` 被两个目标同时链接：
+同一份 `app/battery/battery.c` 被两个 CMake 目标同时链接：
 
 ```
 ┌──────────────┐     ┌──────────────┐
@@ -352,14 +332,14 @@ ruby tools/gen_mocks.rb
 
 | 平台 | 编译器 | 构建方式 |
 |------|--------|----------|
-| Ubuntu | gcc | Makefile + CMake |
-| macOS | clang | Makefile + CMake |
-| Windows | MSVC (Visual Studio) | CMake |
+| Ubuntu | gcc | CMake |
+| macOS | clang | CMake |
+| Windows | MSVC (Ninja) | CMake |
 
 每个平台执行：
 1. CMock 重新生成桩（验证桩生成流程）
-2. 构建（Makefile 或 CMake）
-3. 运行 19 个单元测试
+2. CMake 配置 + 构建
+3. CTest 运行 19 个单元测试
 4. 运行固件模拟
 5. 上传构建产物（artifact）
 
@@ -379,14 +359,14 @@ cppcheck --enable=warning,style,performance,portability \
 
 # 2. 桩生成 + 构建 + 测试
 ruby tools/gen_mocks.rb
-make all
-./unit_test
+cmake -S . -B build && cmake --build build
+ctest --test-dir build --output-on-failure
 
-# 3. 覆盖率（需 lcov）
-make clean
-make all CFLAGS="-Wall -Wextra -std=c99 --coverage -O0 -g"
-./unit_test
-lcov --capture --directory . --output-file coverage.info
+# 3. 覆盖率（需 lcov，gcc/clang）
+cmake -S . -B build -DENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+ctest --test-dir build
+lcov --capture --directory build --output-file coverage.info
 ```
 
 ---
@@ -433,21 +413,18 @@ ruby tools/gen_mocks.rb
 
 ### 步骤 6：更新构建系统
 
-在 `Makefile` 的 `TEST_SRCS` 中添加：
-- `app/sensor/sensor.c`
-- `test/unit/test_sensor.c`
-- `test/mocks/mock_hal_sensor.c`
-
-在 `CMakeLists.txt` 的 `unit_test` 目标中添加同样的文件。
+在 `CMakeLists.txt` 中：
+- `unit_test` 目标添加：`app/sensor/sensor.c`、`test/unit/test_sensor.c`、`test/mocks/mock_hal_sensor.c`
+- 如固件需要该模块，在 `firmware_demo` 目标中也添加
 
 ### 步骤 7：验证并推送
 
 ```bash
-make all && ./unit_test   # 本地验证
+cmake -S . -B build && cmake --build build && ctest --test-dir build  # 本地验证
 git add -A && git commit && git push  # CI 自动跑全部测试
 ```
 
-> **CI 无需修改**——只要源文件加进了 Makefile/CMakeLists，CI 会自动编译运行所有测试。
+> **CI 无需修改**——只要源文件加进了 CMakeLists.txt，CI 会自动编译运行所有测试。
 
 ---
 
@@ -469,13 +446,13 @@ git add -A && git commit && git push  # CI 自动跑全部测试
 
 **A**：CI 的 `coverage` Job 会生成 HTML 覆盖率报告并上传为 artifact。在 GitHub Actions 页面点击对应 run → Artifacts → `coverage-report` 下载，打开 `index.html` 查看逐行覆盖率。
 
-### Q4：Windows 上为什么不用 Makefile？
+### Q4：Windows 上怎么构建？
 
-**A**：GitHub Actions 的 Windows runner 预装 Visual Studio（MSVC）但没有 MinGW make。因此 Windows 平台使用 CMake + Visual Studio 生成器。本地 Windows 开发如有 MinGW 环境，仍可使用 `mingw32-make`。
+**A**：CMake 会自动检测可用的生成器。如果安装了 Visual Studio，使用 VS 生成器；如果安装了 Ninja，使用 `cmake -S . -B build -G "Ninja"`。CI 中 Windows 平台使用 Ninja + MSVC 环境（`ilammy/msvc-dev-cmd`），这是最稳定的方案。
 
 ### Q5：测试中发现 bug 怎么办？
 
-**A**：单元测试的价值就在这里——在 PC 上发现 bug 比在硬件上调试快得多。修复 `app/` 下的代码后重新运行 `make test`，确认所有用例通过后再推送，CI 会自动验证。
+**A**：单元测试的价值就在这里——在 PC 上发现 bug 比在硬件上调试快得多。修复 `app/` 下的代码后重新运行 `ctest --test-dir build`，确认所有用例通过后再推送，CI 会自动验证。
 
 ---
 

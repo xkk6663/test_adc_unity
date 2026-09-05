@@ -58,21 +58,20 @@ push/PR to main
 
 | 平台 | 编译器 | 构建方式 | 预计耗时 |
 |------|--------|----------|----------|
-| ubuntu-latest | gcc | Makefile + CMake | ~2 分钟 |
-| macos-latest | clang | Makefile + CMake | ~3 分钟 |
-| windows-latest | MSVC (cl.exe) | CMake + Ninja | ~3 分钟 |
+| ubuntu-latest | gcc | CMake (Unix Makefiles) | ~2 分钟 |
+| macos-latest | clang | CMake (Unix Makefiles) | ~2 分钟 |
+| windows-latest | MSVC (cl.exe) | CMake + Ninja | ~2 分钟 |
 
 每个平台执行步骤：
 1. Checkout 代码
 2. 安装依赖（Ubuntu: apt / macOS: brew / Windows: setup-ruby + msvc-dev-cmd）
 3. 打印工具版本
 4. CMock 重新生成桩（验证桩生成流程）
-5. Makefile 构建（仅 Ubuntu/macOS）
-6. Makefile 单元测试运行（仅 Ubuntu/macOS）
-7. Makefile 固件运行（仅 Ubuntu/macOS）
-8. CMake 构建（全平台）
-9. CTest 单元测试运行（全平台）
-10. 上传构建产物
+5. CMake 配置
+6. CMake 构建
+7. CTest 单元测试运行
+8. 固件模拟运行
+9. 上传构建产物
 
 #### Job 3：coverage
 
@@ -93,8 +92,8 @@ push/PR to main
 
 | 平台 | 预装工具 | 需安装 |
 |------|----------|--------|
-| ubuntu-latest | git, make, gcc, cmake | cppcheck, ruby, lcov |
-| macos-latest | git, clang, make | cmake, ruby (brew) |
+| ubuntu-latest | git, gcc, cmake | cppcheck, ruby, lcov |
+| macos-latest | git, clang, cmake | ruby (brew) |
 | windows-latest | git, cmake, Visual Studio Build Tools, Ninja | ruby (setup-ruby), MSVC 环境 (msvc-dev-cmd) |
 
 ### 2.2 关键 Action 版本
@@ -209,14 +208,14 @@ cppcheck --enable=warning,style,performance,portability \
 
 # 2. 桩生成 + 构建 + 测试
 ruby tools/gen_mocks.rb
-make all
-./unit_test
+cmake -S . -B build && cmake --build build
+ctest --test-dir build --output-on-failure
 
 # 3. 覆盖率
-make clean
-make all CFLAGS="-Wall -Wextra -std=c99 --coverage -O0 -g"
-./unit_test
-lcov --capture --directory . --output-file coverage.info
+cmake -S . -B build -DENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+ctest --test-dir build
+lcov --capture --directory build --output-file coverage.info
 ```
 
 ---

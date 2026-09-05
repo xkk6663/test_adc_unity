@@ -14,7 +14,7 @@
  *          新增模块时：
  *          1. 在 setUp() 中添加 mock_xxx_Init()
  *          2. 在 tearDown() 中添加 mock_xxx_Verify() 和 mock_xxx_Destroy()
- *          3. 在 Makefile/CMakeLists.txt 的源文件列表中添加新测试文件
+ *          3. 在 CMakeLists.txt 的源文件列表中添加新测试文件
  *          4. CI 会自动编译运行所有测试，无需修改 CI 配置
  */
 #include "unity.h"
