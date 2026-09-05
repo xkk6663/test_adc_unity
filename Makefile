@@ -35,7 +35,23 @@ endif
 # ==============================================================================
 # 目标1：PC 单元测试（链接 CMock 桩）
 # ==============================================================================
-TEST_SRCS = test_battery.c battery.c mock_hal_adc.c unity/unity.c cmock/src/cmock.c
+# 源文件说明：
+#   test_battery.c   —— battery 模块的测试用例（11 个）
+#   test_led.c       —— led 模块的测试用例（8 个）
+#   test_support.c   —— 统一的 setUp/tearDown（管理所有 CMock 桩）
+#   battery.c        —— 被测模块1：电池电压采集
+#   led.c            —— 被测模块2：LED 指示灯控制
+#   mock_hal_adc.c   —— ADC 接口桩（battery 模块依赖）
+#   mock_hal_gpio.c  —— GPIO 接口桩（led 模块依赖）
+#   unity/unity.c    —— Unity 测试框架
+#   cmock/src/cmock.c —— CMock 运行时
+#
+# 新增模块时，只需在此处添加被测模块 .c、测试文件 .c、对应桩 .c，
+# CI 会自动编译运行所有测试，无需修改 CI 配置。
+TEST_SRCS = test_battery.c test_led.c test_support.c \
+            battery.c led.c \
+            mock_hal_adc.c mock_hal_gpio.c \
+            unity/unity.c cmock/src/cmock.c
 TEST_OBJS = $(TEST_SRCS:.c=.o)
 TEST_BIN  = unit_test$(EXE_EXT)
 

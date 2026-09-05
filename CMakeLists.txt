@@ -35,11 +35,17 @@ include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/unity ${CMAKE_SOURCE
 # ==============================================================================
 # 目标1：PC 单元测试
 # ==============================================================================
-# 链接 CMock 桩 mock_hal_adc.c，替换真实 HAL 实现
+# 链接 CMock 桩，替换真实 HAL 实现
+# 新增模块时只需在此添加：测试文件 + 被测模块 + 对应桩文件，
+# CI 会自动编译运行所有测试，无需修改 CI 配置。
 add_executable(unit_test
-    test_battery.c       # 单元测试用例
-    battery.c            # 被测模块（业务逻辑）
-    mock_hal_adc.c       # CMock 生成的 HAL 桩
+    test_battery.c       # battery 模块测试用例（11 个）
+    test_led.c           # led 模块测试用例（8 个）
+    test_support.c       # 统一 setUp/tearDown（管理所有 CMock 桩）
+    battery.c            # 被测模块1：电池电压采集
+    led.c                # 被测模块2：LED 指示灯控制
+    mock_hal_adc.c       # ADC 接口桩（battery 依赖）
+    mock_hal_gpio.c      # GPIO 接口桩（led 依赖）
     unity/unity.c        # Unity 测试框架
     cmock/src/cmock.c    # CMock 运行时（桩函数依赖的内存管理等）
 )

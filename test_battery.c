@@ -26,33 +26,12 @@
  *
  * @note    每个用例的 setUp() 初始化 mock，tearDown() 校验并销毁 mock，
  *          确保用例之间相互独立（测试隔离原则）。
+ *          setUp/tearDown 统一定义在 test_support.c 中，
+ *          管理所有 CMock 桩（mock_hal_adc + mock_hal_gpio）。
  */
 #include "unity.h"
 #include "mock_hal_adc.h"
 #include "battery.h"
-
-/* ==========================================================================
- * 测试固件：每个用例执行前/后的公共操作
- * ========================================================================== */
-
-/**
- * @brief 每个测试用例执行前的初始化
- * @note  初始化 CMock 桩状态，确保每个用例从干净状态开始
- */
-void setUp(void)
-{
-    mock_hal_adc_Init();
-}
-
-/**
- * @brief 每个测试用例执行后的校验与清理
- * @note  校验 HAL 调用次数是否符合预期，然后销毁桩状态
- */
-void tearDown(void)
-{
-    mock_hal_adc_Verify();
-    mock_hal_adc_Destroy();
-}
 
 /* ==========================================================================
  * 等价类划分 —— 有效等价类
@@ -301,43 +280,5 @@ void test_read_battery_mv_hal_error(void)
     /* tearDown 中的 Verify 会校验 HAL 调用次数 = 1 */
 }
 
-/* ==========================================================================
- * 测试入口
- * ========================================================================== */
-
-/**
- * @brief 单元测试主函数
- *
- * @details 使用 Unity 框架的标准入口模式：
- *          UNITY_BEGIN() 初始化测试统计 → RUN_TEST() 逐个执行用例 →
- *          UNITY_END() 输出汇总结果并返回失败数。
- *
- * @return  失败的测试用例数（0 = 全部通过）
- */
-int main(void)
-{
-    UNITY_BEGIN();
-
-    /* 等价类划分 */
-    RUN_TEST(test_adc_to_mv_normal);
-    RUN_TEST(test_adc_to_mv_below_max);
-
-    /* 边界值分析 */
-    RUN_TEST(test_adc_to_mv_zero);
-    RUN_TEST(test_adc_to_mv_full_scale_clamp);
-    RUN_TEST(test_adc_to_mv_clamp_critical);
-
-    /* 错误推测 */
-    RUN_TEST(test_adc_to_mv_overvoltage);
-    RUN_TEST(test_adc_to_mv_invalid_input);
-
-    /* 接口交互测试 */
-    RUN_TEST(test_read_battery_mv_success);
-    RUN_TEST(test_read_battery_mv_multi_calls);
-    RUN_TEST(test_read_battery_mv_ignore_mode);
-
-    /* 容错测试 */
-    RUN_TEST(test_read_battery_mv_hal_error);
-
-    return UNITY_END();
-}
+/* 注：main 函数和测试用例注册统一定义在 test_support.c 中，
+ * 新增模块的测试用例只需在 test_support.c 的 main() 中添加 RUN_TEST()。 */
