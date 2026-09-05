@@ -1,5 +1,5 @@
 # ==============================================================================
-# Unity+CMock Demo 工程 Makefile
+# Unity+CMock Demo 工程 Makefile（产品级分层架构）
 # ==============================================================================
 # 适用环境：
 #   - Windows + MinGW：使用 mingw32-make
@@ -9,23 +9,46 @@
 #   make            编译两个目标（unit_test + firmware_demo）
 #   make test       编译并运行单元测试
 #   make firmware   编译并运行固件模拟
+#   make mocks      用 CMock 重新生成桩文件
 #   make clean      清理构建产物
 #
-# 双目标说明：
-#   unit_test      —— 链接 CMock 桩 mock_hal_adc.c，在 PC 上跑单元测试
-#   firmware_demo  —— 链接 firmware_main.c 中的真实 HAL 模拟，模拟固件运行
-#   两个目标共享同一份 battery.c 业务代码
+# 代码架构分层（仿照 ELAB 框架）：
+#   app/        —— 应用层（业务模块：battery、led）
+#   hal/        —— 硬件抽象层接口（hal_adc.h、hal_gpio.h）
+#   platform/   —— 平台层（固件主程序、真实 HAL 实现）
+#   test/       —— 测试层（unit/ 单元测试、mocks/ CMock 桩）
+#   framework/  —— 第三方框架（unity、cmock）
+#   tools/      —— 构建工具脚本（gen_mocks.rb、CMockConfig.yml）
 # ==============================================================================
 
+# ==============================================================================
+# 目录定义
+# ==============================================================================
+APP_DIR       = app
+HAL_DIR       = hal
+PLATFORM_DIR  = platform
+TEST_DIR      = test
+FRAMEWORK_DIR = framework
+TOOLS_DIR     = tools
+
+# ==============================================================================
 # 编译器与编译选项
+# ==============================================================================
 CC      = gcc
-CFLAGS  = -Wall -Wextra -std=c99 -I. -Iunity -Icmock/src
+CFLAGS  = -Wall -Wextra -std=c99
 LDFLAGS =
 
-# 跨平台可执行文件后缀检测：
-#   Windows 下 gcc 生成的可执行文件需带 .exe 后缀；
-#   Linux / macOS 下不需要后缀。CI 运行在 Linux 上，
-#   若硬编码 .exe 会导致 ./unit_test 找不到文件。
+# 头文件搜索路径（按架构分层添加）
+# 产品级做法：每层代码只通过 -I 暴露自己的公共头文件目录，
+# 避免跨层直接引用源文件目录。
+INCLUDES = -I$(APP_DIR)/battery \
+           -I$(APP_DIR)/led \
+           -I$(HAL_DIR) \
+           -I$(TEST_DIR)/mocks \
+           -I$(FRAMEWORK_DIR)/unity \
+           -I$(FRAMEWORK_DIR)/cmock/src
+
+# 跨平台可执行文件后缀检测
 ifeq ($(OS),Windows_NT)
     EXE_EXT = .exe
 else
@@ -35,30 +58,30 @@ endif
 # ==============================================================================
 # 目标1：PC 单元测试（链接 CMock 桩）
 # ==============================================================================
-# 源文件说明：
-#   test_battery.c   —— battery 模块的测试用例（11 个）
-#   test_led.c       —— led 模块的测试用例（8 个）
-#   test_support.c   —— 统一的 setUp/tearDown（管理所有 CMock 桩）
-#   battery.c        —— 被测模块1：电池电压采集
-#   led.c            —— 被测模块2：LED 指示灯控制
-#   mock_hal_adc.c   —— ADC 接口桩（battery 模块依赖）
-#   mock_hal_gpio.c  —— GPIO 接口桩（led 模块依赖）
-#   unity/unity.c    —— Unity 测试框架
-#   cmock/src/cmock.c —— CMock 运行时
-#
-# 新增模块时，只需在此处添加被测模块 .c、测试文件 .c、对应桩 .c，
-# CI 会自动编译运行所有测试，无需修改 CI 配置。
-TEST_SRCS = test_battery.c test_led.c test_support.c \
-            battery.c led.c \
-            mock_hal_adc.c mock_hal_gpio.c \
-            unity/unity.c cmock/src/cmock.c
+# 源文件按架构分层组织：
+#   test/unit/    —— 各模块测试用例 + 统一测试固件
+#   app/          —— 被测业务模块
+#   test/mocks/   —— CMock 生成的 HAL 桩
+#   framework/    —— Unity + CMock 运行时
+TEST_SRCS = $(TEST_DIR)/unit/test_battery.c \
+            $(TEST_DIR)/unit/test_led.c \
+            $(TEST_DIR)/unit/test_support.c \
+            $(APP_DIR)/battery/battery.c \
+            $(APP_DIR)/led/led.c \
+            $(TEST_DIR)/mocks/mock_hal_adc.c \
+            $(TEST_DIR)/mocks/mock_hal_gpio.c \
+            $(FRAMEWORK_DIR)/unity/unity.c \
+            $(FRAMEWORK_DIR)/cmock/src/cmock.c
+
 TEST_OBJS = $(TEST_SRCS:.c=.o)
 TEST_BIN  = unit_test$(EXE_EXT)
 
 # ==============================================================================
 # 目标2：固件模拟（链接真实 HAL 实现）
 # ==============================================================================
-FW_SRCS = firmware_main.c battery.c
+FW_SRCS = $(PLATFORM_DIR)/firmware/firmware_main.c \
+          $(APP_DIR)/battery/battery.c
+
 FW_OBJS = $(FW_SRCS:.c=.o)
 FW_BIN  = firmware_demo$(EXE_EXT)
 
@@ -69,15 +92,15 @@ all: $(TEST_BIN) $(FW_BIN)
 
 # 单元测试可执行文件
 $(TEST_BIN): $(TEST_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 # 固件模拟可执行文件
 $(FW_BIN): $(FW_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 # 通用编译规则：.c → .o
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
 # ==============================================================================
 # 便捷目标
@@ -91,18 +114,30 @@ test: $(TEST_BIN)
 firmware: $(FW_BIN)
 	./$(FW_BIN)
 
+# 用 CMock 重新生成桩文件
+# 需 Ruby 环境；桩输出到 test/mocks/ 目录
+mocks:
+	ruby $(TOOLS_DIR)/gen_mocks.rb
+
 # 清理所有构建产物（自动适配 Windows / Linux / macOS）
-# Windows 下用 if exist + del，避免文件不存在时 del 报错；
-# 类 Unix 下用 rm -f。不再混用 rm（Windows cmd 无此命令）。
 clean:
 ifeq ($(OS),Windows_NT)
-	@if exist *.o del /Q *.o
-	@if exist unity\*.o del /Q unity\*.o
+	@if exist $(APP_DIR)\battery\*.o del /Q $(APP_DIR)\battery\*.o
+	@if exist $(APP_DIR)\led\*.o del /Q $(APP_DIR)\led\*.o
+	@if exist $(TEST_DIR)\unit\*.o del /Q $(TEST_DIR)\unit\*.o
+	@if exist $(TEST_DIR)\mocks\*.o del /Q $(TEST_DIR)\mocks\*.o
+	@if exist $(FRAMEWORK_DIR)\unity\*.o del /Q $(FRAMEWORK_DIR)\unity\*.o
+	@if exist $(FRAMEWORK_DIR)\cmock\src\*.o del /Q $(FRAMEWORK_DIR)\cmock\src\*.o
+	@if exist $(PLATFORM_DIR)\firmware\*.o del /Q $(PLATFORM_DIR)\firmware\*.o
 	@if exist $(TEST_BIN) del /Q $(TEST_BIN)
 	@if exist $(FW_BIN) del /Q $(FW_BIN)
 else
-	rm -f *.o unity/*.o $(TEST_BIN) $(FW_BIN)
+	rm -f $(APP_DIR)/battery/*.o $(APP_DIR)/led/*.o
+	rm -f $(TEST_DIR)/unit/*.o $(TEST_DIR)/mocks/*.o
+	rm -f $(FRAMEWORK_DIR)/unity/*.o $(FRAMEWORK_DIR)/cmock/src/*.o
+	rm -f $(PLATFORM_DIR)/firmware/*.o
+	rm -f $(TEST_BIN) $(FW_BIN)
 endif
 
 # 声明伪目标（不与文件名冲突）
-.PHONY: all test firmware clean
+.PHONY: all test firmware mocks clean

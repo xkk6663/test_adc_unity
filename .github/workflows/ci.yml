@@ -1,16 +1,20 @@
 # ==============================================================================
-# GitHub Actions CI/CD 流水线
+# 产品级 CI/CD 流水线（仿照 ELAB 框架工程实践）
 # ==============================================================================
 # 触发条件：
 #   - push 到 main / master 分支
 #   - 向 main / master 分支发起 Pull Request
 #
-# 流水线覆盖：
-#   1. 环境准备（gcc / make / cmake / ruby）
-#   2. CMock 重新生成桩文件（验证桩生成流程可用）
-#   3. Makefile 构建 + 单元测试
-#   4. 固件模拟运行
-#   5. CMake 构建 + CTest
+# 流水线分为三个 Job：
+#   1. static-analysis —— 静态代码检查（cppcheck）
+#   2. build-and-test  —— 多平台构建矩阵（Ubuntu/gcc + macOS/clang + Windows/MSVC）
+#   3. coverage         —— 测试覆盖率（gcov + lcov，仅 Ubuntu）
+#
+# 每个平台验证：
+#   - CMock 桩自动生成（验证 hal → mock 流程）
+#   - Makefile 构建（Ubuntu/macOS）或 CMake 构建（全平台）
+#   - 单元测试运行（19 个用例）
+#   - 固件模拟运行
 # ==============================================================================
 
 name: CI
@@ -21,9 +25,53 @@ on:
   pull_request:
     branches: [main, master]
 
+# ==============================================================================
+# Job 1: 静态代码分析
+# ==============================================================================
 jobs:
-  build-and-test:
+  static-analysis:
+    name: Static Analysis (cppcheck)
     runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck on application code
+        run: |
+          cppcheck --enable=warning,style,performance,portability \
+                   --inline-suppr \
+                   --suppress=missingIncludeSystem \
+                   --error-exitcode=1 \
+                   -I app/battery -I app/led -I hal \
+                   app/ hal/ platform/
+
+  # ============================================================================
+  # Job 2: 多平台构建与测试矩阵
+  # ============================================================================
+  build-and-test:
+    name: Build & Test (${{ matrix.os }})
+    needs: static-analysis
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            generator: "Unix Makefiles"
+          - os: macos-latest
+            cc: clang
+            generator: "Unix Makefiles"
+          - os: windows-latest
+            cc: msvc
+            generator: "Visual Studio 17 2022"
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       # ------------------------------------------------------------------
@@ -34,63 +82,129 @@ jobs:
 
       # ------------------------------------------------------------------
       # 2. 安装依赖
-      #    ubuntu-latest 通常预装了 gcc/make/cmake/ruby，显式安装确保齐全
       # ------------------------------------------------------------------
-      - name: Install dependencies
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc make cmake ruby
 
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install cmake ruby
+
+      - name: Setup Ruby (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
       # ------------------------------------------------------------------
-      # 3. 打印工具版本（便于排查问题）
+      # 3. 打印工具版本
       # ------------------------------------------------------------------
       - name: Show tool versions
         run: |
-          echo "=== gcc ===" && gcc --version
-          echo "=== make ===" && make --version
+          echo "=== OS ===" && uname -a 2>/dev/null || ver
           echo "=== cmake ===" && cmake --version
           echo "=== ruby ===" && ruby --version
 
       # ------------------------------------------------------------------
-      # 4. 用 CMock 重新生成桩文件
-      #    验证 hal_adc.h → mock_hal_adc.c/.h 的自动生成流程
-      #    生成的桩会覆盖仓库中预生成的版本
+      # 4. CMock 重新生成桩（验证桩生成流程可用）
       # ------------------------------------------------------------------
       - name: Regenerate mocks with CMock
-        run: ruby gen_mocks.rb
+        run: ruby tools/gen_mocks.rb
 
       # ------------------------------------------------------------------
-      # 5. Makefile 构建（双目标：unit_test + firmware_demo）
+      # 5. Makefile 构建（仅 Ubuntu/macOS，Windows 无 MinGW make）
       # ------------------------------------------------------------------
       - name: Build with Makefile
+        if: matrix.os != 'windows-latest'
         run: make all
 
-      # ------------------------------------------------------------------
-      # 6. 运行单元测试（Makefile 构建的 unit_test）
-      # ------------------------------------------------------------------
       - name: Run unit tests (Makefile)
+        if: matrix.os != 'windows-latest'
         run: ./unit_test
 
-      # ------------------------------------------------------------------
-      # 7. 运行固件模拟（验证双目标编译的固件目标可正常运行）
-      # ------------------------------------------------------------------
-      - name: Run firmware demo
+      - name: Run firmware demo (Makefile)
+        if: matrix.os != 'windows-latest'
         run: ./firmware_demo
 
       # ------------------------------------------------------------------
-      # 8. CMake 构建（验证 CMakeLists.txt 可用）
+      # 6. CMake 构建（全平台）
       # ------------------------------------------------------------------
       - name: Build with CMake
         run: |
-          mkdir -p build
-          cd build
-          cmake ..
-          make
+          cmake -S . -B build -G "${{ matrix.generator }}"
+          cmake --build build --config Release
 
-      # ------------------------------------------------------------------
-      # 9. 运行 CTest（CMake 集成的测试）
-      # ------------------------------------------------------------------
       - name: Run unit tests (CTest)
         run: |
           cd build
-          ctest --output-on-failure
+          ctest --output-on-failure -C Release
+
+      # ------------------------------------------------------------------
+      # 7. 上传构建产物
+      # ------------------------------------------------------------------
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.os }}
+          path: |
+            unit_test
+            unit_test.exe
+            firmware_demo
+            firmware_demo.exe
+            build/Release/unit_test.exe
+            build/Release/firmware_demo.exe
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # Job 3: 测试覆盖率（仅 Ubuntu，gcov/lcov 最成熟）
+  # ============================================================================
+  coverage:
+    name: Test Coverage (gcov/lcov)
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make ruby lcov
+
+      - name: Regenerate mocks
+        run: ruby tools/gen_mocks.rb
+
+      - name: Build with coverage flags
+        run: |
+          make clean
+          make all CFLAGS="-Wall -Wextra -std=c99 --coverage -O0 -g"
+
+      - name: Run unit tests
+        run: ./unit_test
+
+      - name: Generate coverage report
+        run: |
+          lcov --capture --directory . --output-file coverage.info \
+               --rc lcov_branch_coverage=1
+          lcov --remove coverage.info \
+               '/usr/*' 'framework/*' 'test/*' 'tools/*' \
+               --output-file coverage-filtered.info \
+               --rc lcov_branch_coverage=1
+          genhtml coverage-filtered.info \
+                  --output-directory coverage-report \
+                  --branch-coverage --legend --title "Unit Test Coverage"
+
+      - name: Print coverage summary
+        run: |
+          lcov --summary coverage-filtered.info
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-report/

@@ -27,3 +27,10 @@ Thumbs.db
 
 # 日志
 *.log
+
+# 测试覆盖率（gcov/lcov）
+*.gcno
+*.gcda
+*.gcov
+coverage.info
+coverage-report/
