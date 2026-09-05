@@ -22,6 +22,7 @@
 | 04 | 2026-09-03 | Makefile 编译 | `cmock/src/cmock.h` 缺失（CMock C 运行时未 vendor） | ✅ 已修复 |
 | 05 | 2026-09-03 | 运行单元测试 | Linux 上 Makefile 生成 `unit_test.exe` 但 CI 运行 `./unit_test` | ✅ 已修复 |
 | 06 | 2026-09-05 | Windows 工具版本打印 | PowerShell 不支持 Unix 语法（`&&`、`2>/dev/null`） | ✅ 已修复 |
+| 07 | 2026-09-05 | Windows CMake 构建 | `Visual Studio 17 2022` 生成器在 runner 上不可用 | ✅ 已修复 |
 
 ---
 
@@ -307,6 +308,75 @@ GitHub Actions 的 Windows runner 预装了 Git Bash，指定 `shell: bash` 后�
 | 路径分隔 | `/` | `\`（但 `/` 也常被接受） |
 
 **最佳实践**：跨平台的 `run` 步骤统一指定 `shell: bash`，确保三个平台行为一致。Windows runner 的 Git Bash 完全支持标准 Unix 语法。
+
+---
+
+## 07. Windows CMake 生成器不可用（Visual Studio 2022）
+
+**日期**：2026-09-05
+**CI Run**：commit c84d7df（修复 shell 兼容性后）
+**失败步骤**：Step "Build with CMake"（windows-latest）
+
+### 报错信息
+
+```
+CMake Error at CMakeLists.txt:21 (project):
+  Generator
+
+    Visual Studio 17 2022
+
+  could not find any instance of Visual Studio.
+
+-- Configuring incomplete, errors occurred!
+Error: Process completed with exit code 1.
+```
+
+### 根因分析
+
+CI 矩阵中 Windows 平台指定了 CMake 生成器：
+```yaml
+- os: windows-latest
+  generator: "Visual Studio 17 2022"
+```
+
+CMake 的 "Visual Studio 17 2022" 生成器需要在系统中找到完整的 Visual Studio 2022 安装（通过注册表或 `vswhere.exe` 检测）。GitHub Actions 的 `windows-latest` runner 虽然预装了 Visual Studio Build Tools，但 CMake 在某些 runner 镜像版本中无法自动检测到（可能是镜像更新后 VS 安装路径变化、或 Build Tools 版本不被 CMake 识别为完整 VS 实例）。
+
+这是 GitHub Actions Windows runner 的**已知不稳定点**：Visual Studio 生成器依赖 VS IDE 的完整安装，而 runner 镜像中 VS 的版本和路径会随镜像更新而变化。
+
+### 修复方案
+
+改用 **Ninja + MSVC 编译器**方案，这是 GitHub Actions Windows 上最可靠的 C/C++ 构建方式：
+
+1. **生成器改为 Ninja**：
+   ```yaml
+   - os: windows-latest
+     generator: "Ninja"
+   ```
+   Ninja 不依赖 Visual Studio IDE，只需要编译器在 PATH 中。
+
+2. **添加 MSVC 环境设置 step**：
+   ```yaml
+   - name: Setup MSVC environment (Windows)
+     if: matrix.os == 'windows-latest'
+     uses: ilammy/msvc-dev-cmd@v1
+   ```
+   `ilammy/msvc-dev-cmd` 会运行 `vcvarsall.bat`，设置 `INCLUDE`、`LIB`、`PATH` 等环境变量，使 Ninja 能找到 `cl.exe`（MSVC 编译器）。
+
+3. **产物路径适配**：Ninja 是单配置生成器，可执行文件直接输出到 `build/` 目录（而非 `build/Release/`），在 `upload-artifact` 的 path 中添加 `build/unit_test.exe` 和 `build/firmware_demo.exe`。
+
+### 为什么 Ninja 比 Visual Studio 生成器更可靠？
+
+| 对比项 | Visual Studio 生成器 | Ninja 生成器 |
+|--------|---------------------|-------------|
+| 依赖 | 需要完整 VS IDE 安装 | 只需要编译器在 PATH |
+| 配置类型 | 多配置（Debug/Release 由 `--config` 指定） | 单配置（构建时指定 CMAKE_BUILD_TYPE） |
+| 构建速度 | 较慢（调用 MSBuild） | 快（直接调用编译器） |
+| 跨平台一致性 | 仅 Windows | 全平台一致 |
+| CI 稳定性 | 依赖 VS 安装检测 | 依赖 vcvarsall（更稳定） |
+
+### 教训
+
+在 GitHub Actions 的 Windows runner 上构建 C/C++ 项目时，**优先使用 Ninja + MSVC**，而不是 Visual Studio 生成器。Visual Studio 生成器对 VS IDE 安装的检测在 runner 镜像更新时容易失效。Ninja 配合 `ilammy/msvc-dev-cmd` 是社区验证过的最稳定方案。
 
 ---
 

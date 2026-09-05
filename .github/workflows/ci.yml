@@ -69,7 +69,7 @@ jobs:
             generator: "Unix Makefiles"
           - os: windows-latest
             cc: msvc
-            generator: "Visual Studio 17 2022"
+            generator: "Ninja"
 
     runs-on: ${{ matrix.os }}
 
@@ -99,6 +99,18 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
+
+      # ------------------------------------------------------------------
+      # 2.5 设置 MSVC 开发环境（仅 Windows）
+      #    GitHub Actions 的 windows-latest runner 上 Visual Studio 2022
+      #    生成器可能不可用（"could not find any instance of Visual Studio"）。
+      #    使用 Ninja + MSVC 编译器是 Windows 上最可靠的 C/C++ 构建方式。
+      #    ilammy/msvc-dev-cmd 会运行 vcvarsall.bat 设置 INCLUDE/LIB/PATH 等
+      #    环境变量，使 Ninja 能找到 cl.exe 编译器。
+      # ------------------------------------------------------------------
+      - name: Setup MSVC environment (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
 
       # ------------------------------------------------------------------
       # 3. 打印工具版本
@@ -159,6 +171,10 @@ jobs:
             unit_test.exe
             firmware_demo
             firmware_demo.exe
+            build/unit_test
+            build/unit_test.exe
+            build/firmware_demo
+            build/firmware_demo.exe
             build/Release/unit_test.exe
             build/Release/firmware_demo.exe
           if-no-files-found: ignore
